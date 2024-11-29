@@ -1,5 +1,6 @@
 const db = require("../utils/firebase");
 const admin = require("firebase-admin"); 
+const redisClient = require("../utils/redis");
 
 const addUser = async (userData) => {
   try {
@@ -44,6 +45,13 @@ const addRecentlyViewed = async (product) => {
 
 const getRecentlyViewed = async (userId) => {
   try {
+    const cacheKey = `recentlyViewed:${userId}`;
+    const cachedData = await redisClient.get(cacheKey);
+
+    if (cachedData) {
+      return JSON.parse(cachedData);
+    }
+
     const userRef = db.collection("users").doc(userId);
     const recentlyViewedRef = userRef.collection("recentlyViewed");
 
@@ -51,7 +59,13 @@ const getRecentlyViewed = async (userId) => {
       .orderBy("timestamp", "desc")
       .limit(10)
       .get();
+
     const recentlyViewedProducts = snapshot.docs.map((doc) => doc.data());
+
+    await redisClient.set(cacheKey, JSON.stringify(recentlyViewedProducts), {
+      EX: 60  // Cache for 1 minute
+    });
+
     return recentlyViewedProducts;
   } catch (error) {
     console.error("Error retrieving recently viewed products: ", error);
